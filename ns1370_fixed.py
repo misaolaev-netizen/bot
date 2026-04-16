@@ -398,15 +398,12 @@ async def get_timepad_events(city=None, limit=10, category=None):
     url = "https://api.timepad.ru/v1/events"
     headers = {"Authorization": f"Bearer {TIMEPAD_TOKEN}", "Accept": "application/json"}
     params = {
-        "limit": limit,
+        "limit": 100,
         "skip": 0,
         "fields": ["name", "starts_at", "url", "location", "category", "categories", "tags"],
         "sort": "+starts_at",
         "status": "public",
     }
-    # город в API не фильтруем жёстко, иначе часто пустой результат
-    if category:
-        params["categories"] = category
 
     try:
         session = GLOBAL_AIO_SESSION or await create_aio_session()
@@ -415,12 +412,14 @@ async def get_timepad_events(city=None, limit=10, category=None):
                 text = await resp.text()
                 logger.error(f"Timepad API returned status {resp.status}: {text}")
                 return []
-            data = await resp.json()
 
+            data = await resp.json()
             events = []
+
             for item in data.get("values", []):
                 location = item.get("location", {}) or {}
                 address = location.get("address", "Не указано")
+
                 cats = []
                 raw_cat = item.get("category")
                 if raw_cat:
@@ -430,6 +429,7 @@ async def get_timepad_events(city=None, limit=10, category=None):
                             cats.append(n)
                     elif isinstance(raw_cat, str):
                         cats.append(raw_cat)
+
                 raw_cats = item.get("categories") or item.get("tags")
                 if raw_cats and isinstance(raw_cats, (list, tuple)):
                     for rc in raw_cats:
@@ -441,6 +441,7 @@ async def get_timepad_events(city=None, limit=10, category=None):
                             cats.append(rc)
 
                 cats = [c.strip() for c in cats if c and isinstance(c, str)]
+
                 events.append({
                     "name": item.get("name", "Без названия"),
                     "date": item.get("starts_at", "")[:16].replace("T", " "),
@@ -450,16 +451,43 @@ async def get_timepad_events(city=None, limit=10, category=None):
                     "location_obj": location,
                 })
 
+            filtered_events = []
+
+            for ev in events:
+                addr = (ev.get("address") or "").lower()
+                name = (ev.get("name") or "").lower()
+                cats_joined = " ".join(ev.get("categories") or []).lower()
+
+                # фильтр по городу
+                if city:
+                    city_l = city.lower()
+                    if city_l not in addr and city_l not in name:
+                        continue
+
+                # фильтр по категории
+                if category:
+                    cat_l = str(category).lower()
+                    if cat_l not in cats_joined and cat_l not in name:
+                        continue
+
+                filtered_events.append(ev)
+
+            # если после фильтра пусто, возвращаем просто все события по категории
+            if filtered_events:
+                return filtered_events
+
             if category:
                 cat_l = str(category).lower()
-                filtered = [
+                fallback = [
                     ev for ev in events
-                    if any(cat_l in (c or "").lower() for c in ev.get("categories", []))
-                    or cat_l in ev.get("name", "").lower()
+                    if cat_l in " ".join(ev.get("categories") or []).lower()
+                    or cat_l in (ev.get("name") or "").lower()
                 ]
-                if filtered:
-                    return filtered
-            return events
+                if fallback:
+                    return fallback
+
+            return events[:limit]
+
     except asyncio.TimeoutError:
         logger.warning("Timeout при запросе к Timepad API")
         return []

@@ -11,7 +11,7 @@ from aiogram.client.bot import DefaultBotProperties
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
 
-TOKEN = "8664666780:AAGt52dKdAik8KL4rVfytfMnCKph7vCM7ps"
+TOKEN = "8664666780:AAFVQX_0dInWT_Ou-1NhrExiOL-5V96P5-k"
 TIMEPAD_TOKEN = "91a933aa403fbf4aefab3be8756f7281b8dc74b7"
 ADMIN_ID = [7708240066]
 

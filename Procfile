@@ -1,1 +1,1 @@
-worker: python ns1370_fixed.py
+worker: python3 ns1370_fixed.py

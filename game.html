@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Космический Уклоняльщик</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #0a0a2a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
+        }
+        #gameContainer {
+            position: relative;
+        }
+        canvas {
+            border: 2px solid #00ffff;
+            border-radius: 8px;
+            box-shadow: 0 0 20px #00ffff44, 0 0 60px #00ffff22;
+        }
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            right: 10px;
+            display: flex;
+            justify-content: space-between;
+            color: #00ffff;
+            font-size: 18px;
+            text-shadow: 0 0 10px #00ffff;
+            pointer-events: none;
+        }
+        #overlay {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: rgba(10, 10, 42, 0.9);
+            border-radius: 8px;
+            color: #fff;
+            text-align: center;
+        }
+        #overlay h1 {
+            font-size: 36px;
+            color: #00ffff;
+            text-shadow: 0 0 20px #00ffff;
+            margin-bottom: 10px;
+        }
+        #overlay h2 {
+            font-size: 28px;
+            color: #ff6600;
+            text-shadow: 0 0 15px #ff6600;
+            margin-bottom: 20px;
+        }
+        #overlay p {
+            font-size: 16px;
+            color: #aaa;
+            margin-bottom: 8px;
+        }
+        #overlay .key {
+            display: inline-block;
+            background: #333;
+            border: 1px solid #666;
+            border-radius: 4px;
+            padding: 2px 8px;
+            color: #fff;
+        }
+        #startBtn {
+            margin-top: 20px;
+            padding: 12px 30px;
+            font-size: 20px;
+            font-family: 'Courier New', monospace;
+            background: transparent;
+            border: 2px solid #00ffff;
+            color: #00ffff;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        #startBtn:hover {
+            background: #00ffff;
+            color: #0a0a2a;
+            box-shadow: 0 0 20px #00ffff;
+        }
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="game" width="600" height="800"></canvas>
+        <div id="ui">
+            <span id="score">Score: 0</span>
+            <span id="lives">Lives: 3</span>
+        </div>
+        <div id="overlay">
+            <h1>Космический Уклоняльщик</h1>
+            <p>Управление: <span class="key">&larr;</span> <span class="key">&rarr;</span> или <span class="key">A</span> <span class="key">D</span></p>
+            <p>На мобильном: касание левой/правой части экрана</p>
+            <p>Уклоняйся от астероидов, собирай звёзды!</p>
+            <button id="startBtn">ИГРАТЬ</button>
+        </div>
+    </div>
+
+    <script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    const overlay = document.getElementById('overlay');
+    const startBtn = document.getElementById('startBtn');
+    const scoreEl = document.getElementById('score');
+    const livesEl = document.getElementById('lives');
+
+    // Game state
+    let gameRunning = false;
+    let score = 0;
+    let lives = 3;
+    let speed = 2;
+    let frame = 0;
+    let particles = [];
+    let asteroids = [];
+    let stars = [];
+    let bgStars = [];
+
+    // Player
+    const player = {
+        x: 300,
+        y: 700,
+        width: 40,
+        height: 50,
+        speed: 6,
+        movingLeft: false,
+        movingRight: false,
+        invincible: 0
+    };
+
+    // Generate background stars
+    function initBgStars() {
+        bgStars = [];
+        for (let i = 0; i < 100; i++) {
+            bgStars.push({
+                x: Math.random() * canvas.width,
+                y: Math.random() * canvas.height,
+                size: Math.random() * 2 + 0.5,
+                speed: Math.random() * 1 + 0.5,
+                brightness: Math.random()
+            });
+        }
+    }
+
+    // Draw player spaceship
+    function drawPlayer() {
+        if (player.invincible > 0 && Math.floor(frame / 5) % 2 === 0) return;
+
+        ctx.save();
+        ctx.translate(player.x, player.y);
+
+        // Ship body
+        ctx.beginPath();
+        ctx.moveTo(0, -25);
+        ctx.lineTo(-20, 20);
+        ctx.lineTo(-10, 15);
+        ctx.lineTo(0, 20);
+        ctx.lineTo(10, 15);
+        ctx.lineTo(20, 20);
+        ctx.closePath();
+        ctx.fillStyle = '#00ccff';
+        ctx.fill();
+        ctx.strokeStyle = '#00ffff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Cockpit
+        ctx.beginPath();
+        ctx.ellipse(0, -5, 6, 10, 0, 0, Math.PI * 2);
+        ctx.fillStyle = '#003366';
+        ctx.fill();
+        ctx.strokeStyle = '#0099ff';
+        ctx.stroke();
+
+        // Engine flame
+        const flameSize = 5 + Math.random() * 8;
+        ctx.beginPath();
+        ctx.moveTo(-8, 20);
+        ctx.lineTo(0, 20 + flameSize);
+        ctx.lineTo(8, 20);
+        ctx.fillStyle = `hsl(${30 + Math.random() * 20}, 100%, ${50 + Math.random() * 30}%)`;
+        ctx.fill();
+
+        ctx.restore();
+    }
+
+    // Draw asteroid
+    function drawAsteroid(a) {
+        ctx.save();
+        ctx.translate(a.x, a.y);
+        ctx.rotate(a.rotation);
+
+        ctx.beginPath();
+        for (let i = 0; i < a.vertices; i++) {
+            const angle = (i / a.vertices) * Math.PI * 2;
+            const r = a.size + a.bumps[i];
+            const px = Math.cos(angle) * r;
+            const py = Math.sin(angle) * r;
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.fillStyle = '#665544';
+        ctx.fill();
+        ctx.strokeStyle = '#998877';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Craters
+        ctx.beginPath();
+        ctx.arc(a.size * 0.3, -a.size * 0.2, a.size * 0.2, 0, Math.PI * 2);
+        ctx.fillStyle = '#554433';
+        ctx.fill();
+
+        ctx.restore();
+    }
+
+    // Draw star collectible
+    function drawStar(s) {
+        ctx.save();
+        ctx.translate(s.x, s.y);
+        ctx.rotate(s.rotation);
+
+        const glow = 0.5 + Math.sin(frame * 0.1 + s.x) * 0.3;
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = `rgba(255, 255, 0, ${glow})`;
+
+        ctx.beginPath();
+        for (let i = 0; i < 5; i++) {
+            const angle = (i * 4 * Math.PI) / 5 - Math.PI / 2;
+            const x = Math.cos(angle) * s.size;
+            const y = Math.sin(angle) * s.size;
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        ctx.fillStyle = '#ffdd00';
+        ctx.fill();
+        ctx.strokeStyle = '#ffaa00';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        ctx.shadowBlur = 0;
+        ctx.restore();
+    }
+
+    // Create asteroid
+    function spawnAsteroid() {
+        const size = 15 + Math.random() * 25;
+        const vertices = 7 + Math.floor(Math.random() * 5);
+        const bumps = [];
+        for (let i = 0; i < vertices; i++) {
+            bumps.push((Math.random() - 0.5) * size * 0.5);
+        }
+        asteroids.push({
+            x: Math.random() * (canvas.width - 60) + 30,
+            y: -50,
+            size,
+            vertices,
+            bumps,
+            speed: speed + Math.random() * 2,
+            rotation: Math.random() * Math.PI * 2,
+            rotSpeed: (Math.random() - 0.5) * 0.05
+        });
+    }
+
+    // Create star
+    function spawnStar() {
+        stars.push({
+            x: Math.random() * (canvas.width - 40) + 20,
+            y: -30,
+            size: 12,
+            speed: speed * 0.8 + Math.random(),
+            rotation: 0,
+            rotSpeed: 0.03
+        });
+    }
+
+    // Create explosion particles
+    function explode(x, y, color) {
+        for (let i = 0; i < 15; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const spd = Math.random() * 4 + 1;
+            particles.push({
+                x, y,
+                vx: Math.cos(angle) * spd,
+                vy: Math.sin(angle) * spd,
+                life: 30 + Math.random() * 20,
+                maxLife: 50,
+                size: Math.random() * 4 + 2,
+                color
+            });
+        }
+    }
+
+    // Collect star particles
+    function sparkle(x, y) {
+        for (let i = 0; i < 10; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const spd = Math.random() * 3 + 1;
+            particles.push({
+                x, y,
+                vx: Math.cos(angle) * spd,
+                vy: Math.sin(angle) * spd,
+                life: 20 + Math.random() * 15,
+                maxLife: 35,
+                size: Math.random() * 3 + 1,
+                color: '#ffdd00'
+            });
+        }
+    }
+
+    // Collision detection
+    function circleCollision(x1, y1, r1, x2, y2, r2) {
+        const dx = x1 - x2;
+        const dy = y1 - y2;
+        return Math.sqrt(dx * dx + dy * dy) < r1 + r2;
+    }
+
+    // Update game
+    function update() {
+        frame++;
+
+        // Increase difficulty
+        if (frame % 120 === 0) {
+            speed += 0.15;
+        }
+
+        // Move player
+        if (player.movingLeft) player.x -= player.speed;
+        if (player.movingRight) player.x += player.speed;
+        player.x = Math.max(25, Math.min(canvas.width - 25, player.x));
+
+        if (player.invincible > 0) player.invincible--;
+
+        // Spawn objects
+        if (frame % Math.max(15, 40 - Math.floor(speed * 2)) === 0) spawnAsteroid();
+        if (frame % 90 === 0) spawnStar();
+
+        // Update asteroids
+        for (let i = asteroids.length - 1; i >= 0; i--) {
+            const a = asteroids[i];
+            a.y += a.speed;
+            a.rotation += a.rotSpeed;
+
+            if (a.y > canvas.height + 50) {
+                asteroids.splice(i, 1);
+                continue;
+            }
+
+            // Collision with player
+            if (player.invincible === 0 && circleCollision(player.x, player.y, 18, a.x, a.y, a.size)) {
+                lives--;
+                livesEl.textContent = `Lives: ${lives}`;
+                player.invincible = 90;
+                explode(a.x, a.y, '#ff4400');
+                asteroids.splice(i, 1);
+
+                if (lives <= 0) {
+                    gameOver();
+                    return;
+                }
+            }
+        }
+
+        // Update stars
+        for (let i = stars.length - 1; i >= 0; i--) {
+            const s = stars[i];
+            s.y += s.speed;
+            s.rotation += s.rotSpeed;
+
+            if (s.y > canvas.height + 30) {
+                stars.splice(i, 1);
+                continue;
+            }
+
+            // Collect star
+            if (circleCollision(player.x, player.y, 20, s.x, s.y, s.size)) {
+                score += 10;
+                scoreEl.textContent = `Score: ${score}`;
+                sparkle(s.x, s.y);
+                stars.splice(i, 1);
+            }
+        }
+
+        // Update particles
+        for (let i = particles.length - 1; i >= 0; i--) {
+            const p = particles[i];
+            p.x += p.vx;
+            p.y += p.vy;
+            p.life--;
+            if (p.life <= 0) particles.splice(i, 1);
+        }
+
+        // Update background stars
+        for (const s of bgStars) {
+            s.y += s.speed;
+            if (s.y > canvas.height) {
+                s.y = 0;
+                s.x = Math.random() * canvas.width;
+            }
+        }
+
+        // Score for surviving
+        if (frame % 30 === 0) {
+            score++;
+            scoreEl.textContent = `Score: ${score}`;
+        }
+    }
+
+    // Draw everything
+    function draw() {
+        // Clear
+        ctx.fillStyle = '#0a0a2a';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Background stars
+        for (const s of bgStars) {
+            const b = 0.3 + Math.sin(frame * 0.02 + s.brightness * 10) * 0.2;
+            ctx.fillStyle = `rgba(255, 255, 255, ${b})`;
+            ctx.fillRect(s.x, s.y, s.size, s.size);
+        }
+
+        // Stars (collectibles)
+        for (const s of stars) drawStar(s);
+
+        // Asteroids
+        for (const a of asteroids) drawAsteroid(a);
+
+        // Player
+        drawPlayer();
+
+        // Particles
+        for (const p of particles) {
+            const alpha = p.life / p.maxLife;
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = p.color;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+    }
+
+    // Game loop
+    function gameLoop() {
+        if (!gameRunning) return;
+        update();
+        draw();
+        requestAnimationFrame(gameLoop);
+    }
+
+    // Game over
+    function gameOver() {
+        gameRunning = false;
+        overlay.classList.remove('hidden');
+        overlay.innerHTML = `
+            <h2>GAME OVER</h2>
+            <h1>Score: ${score}</h1>
+            <p>Скорость достигла: ${speed.toFixed(1)}x</p>
+            <button id="startBtn" onclick="startGame()">ИГРАТЬ СНОВА</button>
+        `;
+    }
+
+    // Start game
+    function startGame() {
+        score = 0;
+        lives = 3;
+        speed = 2;
+        frame = 0;
+        asteroids = [];
+        stars = [];
+        particles = [];
+        player.x = 300;
+        player.invincible = 60;
+        player.movingLeft = false;
+        player.movingRight = false;
+
+        scoreEl.textContent = 'Score: 0';
+        livesEl.textContent = 'Lives: 3';
+        overlay.classList.add('hidden');
+
+        gameRunning = true;
+        initBgStars();
+        gameLoop();
+    }
+
+    // Controls
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') player.movingLeft = true;
+        if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') player.movingRight = true;
+    });
+
+    document.addEventListener('keyup', (e) => {
+        if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') player.movingLeft = false;
+        if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') player.movingRight = false;
+    });
+
+    // Touch controls
+    canvas.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        const touch = e.touches[0];
+        const rect = canvas.getBoundingClientRect();
+        const x = touch.clientX - rect.left;
+        if (x < canvas.width / 2) player.movingLeft = true;
+        else player.movingRight = true;
+    });
+
+    canvas.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        player.movingLeft = false;
+        player.movingRight = false;
+    });
+
+    // Start button
+    startBtn.addEventListener('click', startGame);
+
+    // Init background
+    initBgStars();
+    draw();
+    </script>
+</body>
+</html>
